@@ -67,7 +67,7 @@ final class SecurePinBuffer {
         guard !storage.isEmpty else { return }
         storage.withUnsafeMutableBytes { bytes in
             if let baseAddress = bytes.baseAddress {
-                explicit_bzero(baseAddress, bytes.count)
+                _ = memset(baseAddress, 0, bytes.count)
             }
         }
     }

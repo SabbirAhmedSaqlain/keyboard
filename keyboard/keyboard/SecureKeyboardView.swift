@@ -101,8 +101,6 @@ final class SecureKeyboardView: UIView {
         button.setTitleColor(.label, for: .highlighted) // identical pressed state
         button.backgroundColor = .systemBackground
         button.layer.cornerRadius = 10
-        button.adjustsImageWhenHighlighted = false
-        button.showsTouchWhenHighlighted = false
         button.isExclusiveTouch = true
         button.isMultipleTouchEnabled = false
         button.isAccessibilityElement = false

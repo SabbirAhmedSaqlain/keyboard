@@ -14,6 +14,7 @@ final class DashboardViewController: UIViewController {
     private let confirmField = PinInputView(title: "Confirm PIN")
     private let keyboard = SecureKeyboardView()
     private let statusLabel = UILabel()
+    private let protectedContentView = ScreenCaptureProtectedView()
     private let privacyShield = UIView()
     private let privacyShieldLabel = UILabel()
     private let privacyShieldIcon = UIImageView(image: UIImage(systemName: "lock.shield"))
@@ -45,9 +46,21 @@ final class DashboardViewController: UIViewController {
     }
 
     private func setupLayout() {
+        protectedContentView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(protectedContentView)
+        let contentRoot = protectedContentView.contentView
+
+        let contentScrollView = UIScrollView()
+        contentScrollView.alwaysBounceVertical = false
+        contentScrollView.showsVerticalScrollIndicator = false
+        contentScrollView.contentInsetAdjustmentBehavior = .never
+        contentScrollView.translatesAutoresizingMaskIntoConstraints = false
+        contentRoot.addSubview(contentScrollView)
+
         let header = UILabel()
         header.text = "Dashboard"
         header.font = .systemFont(ofSize: 32, weight: .bold)
+        header.adjustsFontForContentSizeCategory = true
 
         statusLabel.font = .systemFont(ofSize: 14)
         statusLabel.textColor = .secondaryLabel
@@ -59,19 +72,37 @@ final class DashboardViewController: UIViewController {
         contentStack.spacing = 24
         contentStack.setCustomSpacing(32, after: header)
         contentStack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(contentStack)
+        contentScrollView.addSubview(contentStack)
 
         keyboard.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(keyboard)
+        contentRoot.addSubview(keyboard)
+
+        let keyboardPreferredHeight = keyboard.heightAnchor.constraint(equalToConstant: 320)
+        keyboardPreferredHeight.priority = .defaultHigh
+        let keyboardMaxHeight = keyboard.heightAnchor.constraint(lessThanOrEqualTo: contentRoot.heightAnchor, multiplier: 0.44)
+        keyboardMaxHeight.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
-            contentStack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
-            contentStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-            contentStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            protectedContentView.topAnchor.constraint(equalTo: view.topAnchor),
+            protectedContentView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            protectedContentView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            protectedContentView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            keyboard.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            keyboard.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            keyboard.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            contentScrollView.topAnchor.constraint(equalTo: contentRoot.safeAreaLayoutGuide.topAnchor),
+            contentScrollView.leadingAnchor.constraint(equalTo: contentRoot.leadingAnchor),
+            contentScrollView.trailingAnchor.constraint(equalTo: contentRoot.trailingAnchor),
+            contentScrollView.bottomAnchor.constraint(equalTo: keyboard.topAnchor),
+
+            contentStack.topAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.topAnchor, constant: 24),
+            contentStack.leadingAnchor.constraint(equalTo: contentScrollView.frameLayoutGuide.leadingAnchor, constant: 24),
+            contentStack.trailingAnchor.constraint(equalTo: contentScrollView.frameLayoutGuide.trailingAnchor, constant: -24),
+            contentStack.bottomAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.bottomAnchor, constant: -20),
+
+            keyboard.leadingAnchor.constraint(equalTo: contentRoot.leadingAnchor),
+            keyboard.trailingAnchor.constraint(equalTo: contentRoot.trailingAnchor),
+            keyboard.bottomAnchor.constraint(equalTo: contentRoot.bottomAnchor),
+            keyboardPreferredHeight,
+            keyboardMaxHeight
         ])
     }
 

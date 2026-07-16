@@ -1,8 +1,9 @@
 # Secure PIN Keyboard
 
 This project is an iOS UIKit demo for collecting a 4-digit PIN without using the
-system keyboard. It uses a custom randomized keypad, masked PIN boxes, aggressive
-input clearing, and screen/privacy lifecycle hardening.
+system keyboard. It uses a custom randomized keypad, masked PIN boxes, a
+screen-capture-protected render container, aggressive input clearing, and
+screen/privacy lifecycle hardening.
 
 The goal is high-assurance PIN entry inside this app. No mobile UI can honestly
 promise absolute security against a compromised device, a malicious OS, or a
@@ -42,6 +43,14 @@ Sensitive input is stored in `SecurePinBuffer`:
 - Explicit zeroing on delete, clear, and deinit.
 - Immediate clearing after the two PIN entries are compared.
 
+The sensitive UI is hosted by `ScreenCaptureProtectedView`:
+
+- The PIN fields and keypad render inside a secure text-entry backed surface.
+- On supported iOS versions, screenshots and screen recordings should hide that
+  protected content instead of capturing the digits/keypad.
+- The app still listens for screenshot/screen-capture notifications and clears
+  PIN buffers as a fallback.
+
 Privacy events wipe and cover the UI:
 
 - App resigns active.
@@ -62,6 +71,8 @@ This design reduces several common PIN-entry leaks:
 - Text input hooks, autocorrect, prediction, and text-field analytics do not get
   a PIN value because the app does not use text-input controls.
 - The PIN is not written to disk, `UserDefaults`, pasteboard, or logs.
+- Screenshots and recordings are protected by a secure render surface where iOS
+  supports that behavior.
 - Randomized key positions make fixed-coordinate shoulder-surfing, smudge, and
   heat-map attacks less useful.
 - Per-tap reshuffling prevents one tap location from having a stable meaning
@@ -79,8 +90,10 @@ This is hardened, but it is not magic:
 
 - If someone can see both the screen and the finger movement clearly, they may
   still infer the digit because the visual keypad must show digits to be usable.
-- iOS screenshot notifications arrive after a screenshot is taken, so the app can
-  clear immediately afterward but cannot reliably prevent the exact screenshot.
+- iOS does not provide an official app-level "disable screenshots" API. This app
+  uses the secure text-entry render-surface technique, which should hide the
+  protected content on current iOS versions, and then clears input when screenshot
+  or capture notifications arrive.
 - A jailbroken or fully compromised device can read process memory or capture the
   framebuffer.
 - The demo compares two entered PINs. A production app should never store a raw
@@ -96,6 +109,8 @@ This is hardened, but it is not magic:
 - `keyboard/keyboard/PinInputView.swift` - masked PIN display backed by secure
   byte storage.
 - `keyboard/keyboard/SecurePinBuffer.swift` - fixed-size zeroing PIN buffer.
+- `keyboard/keyboard/ScreenCaptureProtectedView.swift` - secure render container
+  for screenshot and screen-recording protection.
 - `keyboard/keyboard/DashboardViewController.swift` - PIN flow, comparison,
   lifecycle privacy observers, and privacy shield.
 - `keyboard/keyboard/SceneDelegate.swift` - app lifecycle hooks that clear and
