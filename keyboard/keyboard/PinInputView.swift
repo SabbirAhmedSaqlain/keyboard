@@ -3,7 +3,7 @@
 //  keyboard
 //
 //  A 4-digit PIN field rendered as masked dot boxes. Digits are never shown
-//  on screen — each entered digit appears only as a filled dot.
+//  on screen; the entered PIN is kept in a fixed-size byte buffer, not String.
 //
 
 import UIKit
@@ -17,14 +17,10 @@ final class PinInputView: UIView {
     /// Called when the user taps the field to make it active.
     var onActivate: ((PinInputView) -> Void)?
 
-    private(set) var pin: String = "" {
-        didSet {
-            updateBoxes()
-            onChange?(self)
-        }
-    }
+    private let securePin = SecurePinBuffer(capacity: 4)
 
-    var isComplete: Bool { pin.count == length }
+    var isComplete: Bool { securePin.isFull }
+    var isEmpty: Bool { securePin.isEmpty }
 
     var isActive: Bool = false {
         didSet { updateBoxes() }
@@ -46,17 +42,30 @@ final class PinInputView: UIView {
     }
 
     func append(digit: Int) {
-        guard pin.count < length else { return }
-        pin.append("\(digit)")
+        let previousCount = securePin.count
+        securePin.append(digit: digit)
+        notifyChangeIfNeeded(previousCount: previousCount)
     }
 
     func deleteBackward() {
-        guard !pin.isEmpty else { return }
-        pin.removeLast()
+        let previousCount = securePin.count
+        securePin.removeLast()
+        notifyChangeIfNeeded(previousCount: previousCount)
     }
 
-    func clear() {
-        pin = ""
+    func clear(sendsChange: Bool = true) {
+        let previousCount = securePin.count
+        securePin.removeAll()
+        if sendsChange {
+            notifyChangeIfNeeded(previousCount: previousCount)
+        } else if previousCount != securePin.count {
+            updateBoxes()
+        }
+    }
+
+    func securelyMatches(_ other: PinInputView) -> Bool {
+        guard isComplete, other.isComplete else { return false }
+        return securePin.constantTimeEquals(other.securePin)
     }
 
     private func setup() {
@@ -107,6 +116,10 @@ final class PinInputView: UIView {
         ])
 
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
+        isAccessibilityElement = true
+        accessibilityLabel = titleLabel.text
+        accessibilityTraits = [.button, .updatesFrequently]
+        updateAccessibilityValue()
     }
 
     @objc private func tapped() {
@@ -115,11 +128,22 @@ final class PinInputView: UIView {
 
     private func updateBoxes() {
         for (index, dot) in dots.enumerated() {
-            dot.isHidden = index >= pin.count
+            dot.isHidden = index >= securePin.count
         }
         for (index, box) in boxes.enumerated() {
-            let isCurrent = isActive && index == min(pin.count, length - 1)
+            let isCurrent = isActive && index == min(securePin.count, length - 1)
             box.layer.borderColor = isCurrent ? UIColor.systemBlue.cgColor : UIColor.clear.cgColor
         }
+        updateAccessibilityValue()
+    }
+
+    private func notifyChangeIfNeeded(previousCount: Int) {
+        guard previousCount != securePin.count else { return }
+        updateBoxes()
+        onChange?(self)
+    }
+
+    private func updateAccessibilityValue() {
+        accessibilityValue = "\(securePin.count) of \(length) digits entered"
     }
 }

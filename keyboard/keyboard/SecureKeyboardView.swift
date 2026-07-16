@@ -8,6 +8,7 @@
 //    so touch coordinates never map to a fixed digit
 //  - No highlight, animation, or haptic on press, so an observer or screen
 //    recording gets no visual feedback about which key was hit
+//  - Digit labels are not exposed through accessibility metadata
 //
 
 import UIKit
@@ -25,6 +26,7 @@ final class SecureKeyboardView: UIView {
     var shufflesAfterEachTap = true
 
     private var digitButtons: [UIButton] = []
+    private var digitByButton: [ObjectIdentifier: Int] = [:]
     private var backspaceButton = UIButton(type: .custom)
     private let stack = UIStackView()
 
@@ -45,6 +47,8 @@ final class SecureKeyboardView: UIView {
 
     private func setup() {
         backgroundColor = UIColor.secondarySystemBackground
+        isMultipleTouchEnabled = false
+        accessibilityElementsHidden = true
 
         stack.axis = .vertical
         stack.distribution = .fillEqually
@@ -99,20 +103,29 @@ final class SecureKeyboardView: UIView {
         button.layer.cornerRadius = 10
         button.adjustsImageWhenHighlighted = false
         button.showsTouchWhenHighlighted = false
+        button.isExclusiveTouch = true
+        button.isMultipleTouchEnabled = false
+        button.isAccessibilityElement = false
+        button.accessibilityLabel = nil
+        button.accessibilityValue = nil
+        button.tag = -1
         return button
     }
 
     /// Assigns digits 0-9 to random key positions.
     func shuffle() {
-        let digits = Array(0...9).shuffled()
+        var generator = SystemRandomNumberGenerator()
+        let digits = Array(0...9).shuffled(using: &generator)
+        digitByButton.removeAll(keepingCapacity: true)
         for (button, digit) in zip(digitButtons, digits) {
             button.setTitle("\(digit)", for: .normal)
-            button.tag = digit
+            digitByButton[ObjectIdentifier(button)] = digit
         }
     }
 
     @objc private func digitTapped(_ sender: UIButton) {
-        delegate?.secureKeyboard(self, didTapDigit: sender.tag)
+        guard let digit = digitByButton[ObjectIdentifier(sender)] else { return }
+        delegate?.secureKeyboard(self, didTapDigit: digit)
         if shufflesAfterEachTap { shuffle() }
     }
 

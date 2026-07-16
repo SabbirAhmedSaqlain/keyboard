@@ -14,8 +14,16 @@ final class DashboardViewController: UIViewController {
     private let confirmField = PinInputView(title: "Confirm PIN")
     private let keyboard = SecureKeyboardView()
     private let statusLabel = UILabel()
+    private let privacyShield = UIView()
+    private let privacyShieldLabel = UILabel()
+    private let privacyShieldIcon = UIImageView(image: UIImage(systemName: "lock.shield"))
 
     private var activeField: PinInputView?
+    private var isInputLocked = false
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -23,6 +31,8 @@ final class DashboardViewController: UIViewController {
         title = "Dashboard"
 
         setupLayout()
+        setupPrivacyShield()
+        registerPrivacyObservers()
 
         pinField.onActivate = { [weak self] field in self?.activate(field) }
         confirmField.onActivate = { [weak self] field in self?.activate(field) }
@@ -31,6 +41,7 @@ final class DashboardViewController: UIViewController {
         keyboard.delegate = self
 
         activate(pinField)
+        refreshPrivacyState()
     }
 
     private func setupLayout() {
@@ -64,7 +75,62 @@ final class DashboardViewController: UIViewController {
         ])
     }
 
+    private func setupPrivacyShield() {
+        privacyShield.backgroundColor = .systemBackground
+        privacyShield.isHidden = true
+        privacyShield.translatesAutoresizingMaskIntoConstraints = false
+        privacyShield.accessibilityViewIsModal = true
+        privacyShield.isAccessibilityElement = true
+        privacyShield.accessibilityLabel = "Secure input hidden"
+        view.addSubview(privacyShield)
+
+        privacyShieldIcon.tintColor = .label
+        privacyShieldIcon.contentMode = .scaleAspectFit
+        privacyShieldIcon.translatesAutoresizingMaskIntoConstraints = false
+        privacyShieldIcon.setContentHuggingPriority(.required, for: .vertical)
+
+        privacyShieldLabel.font = .systemFont(ofSize: 17, weight: .semibold)
+        privacyShieldLabel.textAlignment = .center
+        privacyShieldLabel.textColor = .label
+        privacyShieldLabel.numberOfLines = 0
+
+        let stack = UIStackView(arrangedSubviews: [privacyShieldIcon, privacyShieldLabel])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 16
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        privacyShield.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            privacyShield.topAnchor.constraint(equalTo: view.topAnchor),
+            privacyShield.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            privacyShield.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            privacyShield.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            privacyShieldIcon.widthAnchor.constraint(equalToConstant: 44),
+            privacyShieldIcon.heightAnchor.constraint(equalToConstant: 44),
+
+            stack.centerXAnchor.constraint(equalTo: privacyShield.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: privacyShield.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: privacyShield.leadingAnchor, constant: 32),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: privacyShield.trailingAnchor, constant: -32)
+        ])
+    }
+
+    private func registerPrivacyObservers() {
+        let center = NotificationCenter.default
+        center.addObserver(self, selector: #selector(screenCaptureStateChanged), name: UIScreen.capturedDidChangeNotification, object: nil)
+        center.addObserver(self, selector: #selector(protectedDataWillBecomeUnavailable), name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
+        center.addObserver(self, selector: #selector(protectedDataDidBecomeAvailable), name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
+        center.addObserver(self, selector: #selector(userDidTakeScreenshot), name: UIApplication.userDidTakeScreenshotNotification, object: nil)
+    }
+
     private func activate(_ field: PinInputView) {
+        guard !isInputLocked else { return }
+        setActiveField(field)
+    }
+
+    private func setActiveField(_ field: PinInputView) {
         activeField = field
         pinField.isActive = field === pinField
         confirmField.isActive = field === confirmField
@@ -76,19 +142,85 @@ final class DashboardViewController: UIViewController {
             statusLabel.text = "Enter a 4-digit PIN using the secure keyboard below."
             return
         }
-        if pinField.pin == confirmField.pin {
+        let pinsMatch = pinField.securelyMatches(confirmField)
+        clearSensitiveInput(sendsChange: false)
+
+        if pinsMatch {
             statusLabel.textColor = .systemGreen
-            statusLabel.text = "PINs match."
+            statusLabel.text = "PINs match. Secure input was cleared."
         } else {
             statusLabel.textColor = .systemRed
-            statusLabel.text = "PINs do not match."
+            statusLabel.text = "PINs do not match. Secure input was cleared."
         }
+    }
+
+    func lockForPrivacy(reason: String) {
+        clearSensitiveInput()
+        setPrivacyShield(isVisible: true, reason: reason)
+    }
+
+    func refreshPrivacyState() {
+        if UIScreen.main.isCaptured {
+            lockForPrivacy(reason: "Screen capture detected. Secure input is hidden.")
+            return
+        }
+
+        if !UIApplication.shared.isProtectedDataAvailable {
+            lockForPrivacy(reason: "Protected data is unavailable. Secure input is hidden.")
+            return
+        }
+
+        setPrivacyShield(isVisible: false, reason: nil)
+    }
+
+    private func clearSensitiveInput(sendsChange: Bool = true) {
+        pinField.clear(sendsChange: sendsChange)
+        confirmField.clear(sendsChange: sendsChange)
+        setActiveField(pinField)
+        keyboard.shuffle()
+        if sendsChange {
+            pinChanged()
+        }
+    }
+
+    private func setPrivacyShield(isVisible: Bool, reason: String?) {
+        isInputLocked = isVisible
+        pinField.isUserInteractionEnabled = !isVisible
+        confirmField.isUserInteractionEnabled = !isVisible
+        keyboard.isUserInteractionEnabled = !isVisible
+
+        if let reason {
+            privacyShieldLabel.text = reason
+            privacyShield.accessibilityValue = reason
+        }
+
+        privacyShield.isHidden = !isVisible
+        if isVisible {
+            view.bringSubviewToFront(privacyShield)
+        }
+    }
+
+    @objc private func screenCaptureStateChanged() {
+        refreshPrivacyState()
+    }
+
+    @objc private func protectedDataWillBecomeUnavailable() {
+        lockForPrivacy(reason: "Device lock detected. Secure input was cleared.")
+    }
+
+    @objc private func protectedDataDidBecomeAvailable() {
+        refreshPrivacyState()
+    }
+
+    @objc private func userDidTakeScreenshot() {
+        lockForPrivacy(reason: "Screenshot detected. Secure input was cleared.")
     }
 }
 
 extension DashboardViewController: SecureKeyboardDelegate {
 
     func secureKeyboard(_ keyboard: SecureKeyboardView, didTapDigit digit: Int) {
+        guard !isInputLocked else { return }
         guard let field = activeField else { return }
         field.append(digit: digit)
         // Auto-advance to the confirm field once the first PIN is complete.
@@ -98,8 +230,9 @@ extension DashboardViewController: SecureKeyboardDelegate {
     }
 
     func secureKeyboardDidTapBackspace(_ keyboard: SecureKeyboardView) {
+        guard !isInputLocked else { return }
         guard let field = activeField else { return }
-        if field.pin.isEmpty, field === confirmField {
+        if field.isEmpty, field === confirmField {
             activate(pinField)
             pinField.deleteBackward()
         } else {
