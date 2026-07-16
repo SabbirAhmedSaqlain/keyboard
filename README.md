@@ -1,130 +1,257 @@
-# Secure PIN Keyboard
+# SecurePINKeyboard
 
-This project is an iOS UIKit demo for collecting a 4-digit PIN without using the
-system keyboard. It uses a custom randomized keypad, masked PIN boxes, a
-screen-capture-protected render container, aggressive input clearing, and
-screen/privacy lifecycle hardening.
+Reusable secure PIN entry UI for iOS apps. The package provides a randomized
+numeric keyboard, masked PIN fields, screenshot/screen-recording protection, and
+automatic sensitive-input clearing.
 
-The goal is high-assurance PIN entry inside this app. No mobile UI can honestly
-promise absolute security against a compromised device, a malicious OS, or a
-camera pointed at the screen.
+Minimum supported version: **iOS 12.0**
 
-## How It Works
+## Features
 
-On launch, `SceneDelegate` installs `DashboardViewController` as the root screen.
-The dashboard owns two `PinInputView` fields and one `SecureKeyboardView`.
+- Swift Package Manager compatible.
+- Drop-in `SecurePINEntryViewController`.
+- Lower-level `SecurePINKeyboardView` for custom screens.
+- Keyboard is always anchored from the bottom of the screen in the packaged
+  controller.
+- Custom in-app keypad, so the system keyboard is never opened.
+- Randomized digit layout with optional shuffle after every tap.
+- Masked PIN fields backed by fixed-size byte storage instead of `String`.
+- Constant-time PIN comparison.
+- Automatic clearing on screenshot, screen capture, app inactivity, device lock,
+  and protected-data changes.
+- Optional secure text-entry render container to hide sensitive UI from
+  screenshots and screen recordings on supported iOS versions.
 
-The system keyboard is never shown:
+## Installation
 
-- There is no `UITextField` or `UITextView` in the PIN path.
-- Tapping a PIN field only changes which custom field is active.
-- Tapping a keypad button sends a digit to the active field through
-  `SecureKeyboardDelegate`.
+### Xcode
 
-The keypad is randomized:
+1. Push this repository to GitHub.
+2. In your iOS app, open **File > Add Package Dependencies...**
+3. Paste the repository URL:
 
-- `SecureKeyboardView.shuffle()` assigns digits `0...9` to ten button positions.
-- It uses `SystemRandomNumberGenerator`.
-- It shuffles when the keyboard appears and again after every digit/backspace.
-- Buttons use `.custom` styling with identical normal and highlighted states.
-- Buttons are single-touch/exclusive-touch to avoid multi-tap ambiguity.
+   ```text
+   https://github.com/<your-user>/<your-repo>.git
+   ```
 
-The PIN field is masked:
+4. Select the `SecurePINKeyboard` package product.
+5. Import it in your app:
 
-- `PinInputView` renders only filled dots.
-- Digits are never rendered in the PIN boxes.
-- The entered PIN is not stored as a Swift `String`.
+   ```swift
+   import SecurePINKeyboard
+   ```
 
-Sensitive input is stored in `SecurePinBuffer`:
+### Package.swift
 
-- Fixed-size `[UInt8]` storage.
-- No string interpolation of the full PIN.
-- Constant-time equality check for PIN comparison.
-- Explicit zeroing on delete, clear, and deinit.
-- Immediate clearing after the two PIN entries are compared.
+```swift
+dependencies: [
+    .package(url: "https://github.com/<your-user>/<your-repo>.git", from: "1.0.0")
+],
+targets: [
+    .target(
+        name: "YourApp",
+        dependencies: ["SecurePINKeyboard"]
+    )
+]
+```
 
-The sensitive UI is hosted by `ScreenCaptureProtectedView`:
+## Quick Start
 
-- The PIN fields and keypad render inside a secure text-entry backed surface.
-- On supported iOS versions, screenshots and screen recordings should hide that
-  protected content instead of capturing the digits/keypad.
-- The app still listens for screenshot/screen-capture notifications and clears
-  PIN buffers as a fallback.
+Use `SecurePINEntryViewController` when you want the full production screen.
+This controller already pins the secure keyboard to the bottom of the screen.
 
-Privacy events wipe and cover the UI:
+```swift
+import UIKit
+import SecurePINKeyboard
 
-- App resigns active.
-- App enters background.
-- Protected data becomes unavailable.
-- Screen recording or mirroring is detected.
-- A screenshot notification is received.
+final class LoginViewController: UIViewController {
 
-When one of those events happens, the app clears both PIN buffers, reshuffles the
-keypad, disables input, and shows a privacy shield over the screen.
+    private lazy var pinController: SecurePINEntryViewController = {
+        var config = SecurePINConfiguration(
+            title: "Create PIN",
+            subtitle: "Use this PIN to unlock your account",
+            primaryPINTitle: "Enter PIN",
+            confirmationPINTitle: "Confirm PIN",
+            pinLength: 4,
+            mode: .confirmEntry,
+            shufflesAfterEachTap: true,
+            protectsAgainstScreenCapture: true,
+            clearsOnScreenshot: true,
+            clearsWhenAppResignsActive: true
+        )
 
-## Why This Is More Secure
+        config.accentColor = UIColor(red: 0.13, green: 0.34, blue: 0.95, alpha: 1)
 
-This design reduces several common PIN-entry leaks:
+        let controller = SecurePINEntryViewController(configuration: config)
+        controller.delegate = self
+        return controller
+    }()
 
-- Third-party keyboard extensions cannot see the PIN because the system keyboard
-  is not used.
-- Text input hooks, autocorrect, prediction, and text-field analytics do not get
-  a PIN value because the app does not use text-input controls.
-- The PIN is not written to disk, `UserDefaults`, pasteboard, or logs.
-- Screenshots and recordings are protected by a secure render surface where iOS
-  supports that behavior.
-- Randomized key positions make fixed-coordinate shoulder-surfing, smudge, and
-  heat-map attacks less useful.
-- Per-tap reshuffling prevents one tap location from having a stable meaning
-  during the same entry session.
-- No press highlight, haptic, or animation reveals which key was pressed.
-- Button digit mappings are not stored in `UIButton.tag`.
-- Digit labels are hidden from accessibility metadata to avoid leaking the
-  current randomized layout through UI inspection.
-- PIN bytes are cleared immediately after comparison and on lifecycle/privacy
-  transitions.
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        addChild(pinController)
+        view.addSubview(pinController.view)
+        pinController.view.translatesAutoresizingMaskIntoConstraints = false
 
-## Security Limits
+        NSLayoutConstraint.activate([
+            pinController.view.topAnchor.constraint(equalTo: view.topAnchor),
+            pinController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            pinController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            pinController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
 
-This is hardened, but it is not magic:
+        pinController.didMove(toParent: self)
+    }
+}
 
-- If someone can see both the screen and the finger movement clearly, they may
-  still infer the digit because the visual keypad must show digits to be usable.
-- iOS does not provide an official app-level "disable screenshots" API. This app
-  uses the secure text-entry render-surface technique, which should hide the
-  protected content on current iOS versions, and then clears input when screenshot
-  or capture notifications arrive.
-- A jailbroken or fully compromised device can read process memory or capture the
-  framebuffer.
-- The demo compares two entered PINs. A production app should never store a raw
-  PIN; use a salted verifier, server-side verification, Secure Enclave-backed
-  keys where appropriate, Keychain protection, rate limiting, and lockout policy.
-- Hiding digit labels from accessibility metadata improves confidentiality but
-  reduces accessibility. A production app needs a separate accessible secure
-  entry design and a documented risk decision.
+extension LoginViewController: SecurePINEntryViewControllerDelegate {
 
-## Key Files
+    func securePINEntryViewController(
+        _ controller: SecurePINEntryViewController,
+        didCompleteWith pin: [UInt8]
+    ) {
+        // Send the PIN to your verifier or derive a salted verifier.
+        // Do not log it. Do not store the raw PIN.
+    }
 
-- `keyboard/keyboard/SecureKeyboardView.swift` - randomized custom keypad.
-- `keyboard/keyboard/PinInputView.swift` - masked PIN display backed by secure
-  byte storage.
-- `keyboard/keyboard/SecurePinBuffer.swift` - fixed-size zeroing PIN buffer.
-- `keyboard/keyboard/ScreenCaptureProtectedView.swift` - secure render container
-  for screenshot and screen-recording protection.
-- `keyboard/keyboard/DashboardViewController.swift` - PIN flow, comparison,
-  lifecycle privacy observers, and privacy shield.
-- `keyboard/keyboard/SceneDelegate.swift` - app lifecycle hooks that clear and
-  cover sensitive input.
+    func securePINEntryViewController(
+        _ controller: SecurePINEntryViewController,
+        didFailWith error: SecurePINEntryError
+    ) {
+        // Handle mismatch or locked input state.
+    }
+}
+```
 
-## Production Hardening Checklist
+## Single PIN Entry
 
-Before using this for a real authentication flow:
+Use `.singleEntry` if your app verifies the PIN elsewhere and does not need a
+confirmation field.
 
-- Add server-side rate limiting and account lockout.
-- Store only a salted verifier or use server-side verification.
-- Use Keychain with the strongest access-control class that fits the product.
-- Add jailbreak/root compromise detection as a risk signal.
-- Add telemetry for security events without logging PIN data.
-- Perform manual QA for app switcher snapshots, screen recording, AirPlay,
-  VoiceOver, Switch Control, and external keyboard/pointer behavior.
-- Run a third-party mobile security review before shipping.
+```swift
+let controller = SecurePINEntryViewController(
+    configuration: SecurePINConfiguration(
+        title: "Enter PIN",
+        subtitle: "Unlock your session",
+        primaryPINTitle: "PIN",
+        pinLength: 4,
+        mode: .singleEntry
+    )
+)
+```
+
+## Keyboard-Only Usage
+
+If you want to build your own screen, use `SecurePINKeyboardView` directly.
+To guarantee the keyboard appears from the bottom, pin its bottom anchor to the
+screen or container bottom:
+
+```swift
+import SecurePINKeyboard
+
+final class CustomPINViewController: UIViewController, SecurePINKeyboardViewDelegate {
+
+    private let keyboard = SecurePINKeyboardView()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.addSubview(keyboard)
+        keyboard.delegate = self
+        keyboard.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            keyboard.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            keyboard.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            keyboard.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            keyboard.heightAnchor.constraint(greaterThanOrEqualToConstant: 300)
+        ])
+    }
+
+    func securePINKeyboardView(_ keyboard: SecurePINKeyboardView, didTapDigit digit: Int) {
+        // Append digit to your secure PIN buffer.
+    }
+
+    func securePINKeyboardViewDidTapBackspace(_ keyboard: SecurePINKeyboardView) {
+        // Delete the previous digit.
+    }
+}
+```
+
+Keep any PIN input fields above the keyboard by constraining their container to
+`keyboard.topAnchor`, not to the screen bottom.
+
+## Screenshot And Screen Recording Protection
+
+The packaged controller hosts sensitive UI in `ScreenCaptureProtectedView`, which
+uses a secure text-entry backed render surface. On supported iOS versions, the
+PIN fields and keypad should be hidden from screenshots and recordings.
+
+iOS does not provide an official app-level API to disable the screenshot button.
+For that reason, the package also listens for screenshot and screen-capture
+notifications and clears sensitive input immediately.
+
+## Security Notes
+
+This package reduces common PIN-entry leaks:
+
+- Third-party keyboards cannot see the PIN because the system keyboard is never
+  opened.
+- Digits are not entered through `UITextField` or `UITextView`.
+- PIN data is not stored as a Swift `String`.
+- PIN comparison uses constant-time equality.
+- Digit positions are randomized.
+- Digit mappings are not stored in `UIButton.tag`.
+- Input clears on privacy-sensitive lifecycle events.
+
+No mobile UI can protect against every threat. A jailbroken or fully compromised
+device can read process memory or capture the framebuffer. A camera that sees the
+screen and finger movement can still infer input. Production apps should add
+server-side rate limiting, lockout policy, Keychain-backed verification, and a
+formal security review.
+
+## Public API
+
+- `SecurePINEntryViewController`
+- `SecurePINEntryViewControllerDelegate`
+- `SecurePINConfiguration`
+- `SecurePINEntryMode`
+- `SecurePINEntryError`
+- `SecurePINKeyboardView`
+- `SecurePINKeyboardViewDelegate`
+- `SecurePINInputView`
+- `ScreenCaptureProtectedView`
+
+## Releasing On GitHub
+
+1. Commit the package:
+
+   ```bash
+   git add Package.swift Sources README.md
+   git commit -m "Add SecurePINKeyboard Swift package"
+   ```
+
+2. Push to GitHub:
+
+   ```bash
+   git remote add origin https://github.com/<your-user>/<your-repo>.git
+   git push -u origin main
+   ```
+
+3. Tag the first version:
+
+   ```bash
+   git tag 1.0.0
+   git push origin 1.0.0
+   ```
+
+4. Add the GitHub URL to any iOS app through Swift Package Manager.
+
+## Validation
+
+This package was validated with a generic iOS package build:
+
+```bash
+xcodebuild -scheme SecurePINKeyboard -destination generic/platform=iOS build
+```
+
+The included demo app remains available under `keyboard/`.
