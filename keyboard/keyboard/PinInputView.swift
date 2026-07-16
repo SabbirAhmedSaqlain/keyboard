@@ -69,8 +69,9 @@ final class PinInputView: UIView {
     }
 
     private func setup() {
-        titleLabel.font = .systemFont(ofSize: 15, weight: .medium)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         titleLabel.textColor = .secondaryLabel
+        titleLabel.text = titleLabel.text?.uppercased()
 
         let boxStack = UIStackView()
         boxStack.axis = .horizontal
@@ -79,23 +80,24 @@ final class PinInputView: UIView {
 
         for _ in 0..<length {
             let box = UIView()
-            box.backgroundColor = .secondarySystemBackground
-            box.layer.cornerRadius = 12
+            box.backgroundColor = UIColor.secondarySystemGroupedBackground
+            box.layer.cornerRadius = 14
+            box.layer.cornerCurve = .continuous
             box.layer.borderWidth = 1.5
-            box.layer.borderColor = UIColor.clear.cgColor
-            box.heightAnchor.constraint(equalToConstant: 56).isActive = true
+            box.layer.borderColor = UIColor.separator.withAlphaComponent(0.35).cgColor
+            box.heightAnchor.constraint(equalToConstant: 58).isActive = true
 
             let dot = UIView()
-            dot.backgroundColor = .label
-            dot.layer.cornerRadius = 6
+            dot.backgroundColor = .systemIndigo
+            dot.layer.cornerRadius = 5.5
             dot.isHidden = true
             dot.translatesAutoresizingMaskIntoConstraints = false
             box.addSubview(dot)
             NSLayoutConstraint.activate([
                 dot.centerXAnchor.constraint(equalTo: box.centerXAnchor),
                 dot.centerYAnchor.constraint(equalTo: box.centerYAnchor),
-                dot.widthAnchor.constraint(equalToConstant: 12),
-                dot.heightAnchor.constraint(equalToConstant: 12)
+                dot.widthAnchor.constraint(equalToConstant: 11),
+                dot.heightAnchor.constraint(equalToConstant: 11)
             ])
 
             boxes.append(box)
@@ -132,7 +134,9 @@ final class PinInputView: UIView {
         }
         for (index, box) in boxes.enumerated() {
             let isCurrent = isActive && index == min(securePin.count, length - 1)
-            box.layer.borderColor = isCurrent ? UIColor.systemBlue.cgColor : UIColor.clear.cgColor
+            let isFilled = index < securePin.count
+            box.backgroundColor = isFilled ? UIColor.systemIndigo.withAlphaComponent(0.08) : UIColor.secondarySystemGroupedBackground
+            box.layer.borderColor = isCurrent ? UIColor.systemIndigo.cgColor : UIColor.separator.withAlphaComponent(0.35).cgColor
         }
         updateAccessibilityValue()
     }

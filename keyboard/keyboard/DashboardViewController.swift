@@ -13,6 +13,8 @@ final class DashboardViewController: UIViewController {
     private let pinField = PinInputView(title: "Enter PIN")
     private let confirmField = PinInputView(title: "Confirm PIN")
     private let keyboard = SecureKeyboardView()
+    private let statusPill = UIView()
+    private let statusIcon = UIImageView(image: UIImage(systemName: "lock.fill"))
     private let statusLabel = UILabel()
     private let protectedContentView = ScreenCaptureProtectedView()
     private let privacyShield = UIView()
@@ -28,8 +30,8 @@ final class DashboardViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
-        title = "Dashboard"
+        view.backgroundColor = .systemGroupedBackground
+        title = "Secure PIN"
 
         setupLayout()
         setupPrivacyShield()
@@ -49,6 +51,7 @@ final class DashboardViewController: UIViewController {
         protectedContentView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(protectedContentView)
         let contentRoot = protectedContentView.contentView
+        contentRoot.backgroundColor = .systemGroupedBackground
 
         let contentScrollView = UIScrollView()
         contentScrollView.alwaysBounceVertical = false
@@ -57,29 +60,85 @@ final class DashboardViewController: UIViewController {
         contentScrollView.translatesAutoresizingMaskIntoConstraints = false
         contentRoot.addSubview(contentScrollView)
 
-        let header = UILabel()
-        header.text = "Dashboard"
-        header.font = .systemFont(ofSize: 32, weight: .bold)
-        header.adjustsFontForContentSizeCategory = true
+        let badge = UIImageView(image: UIImage(systemName: "lock.shield.fill"))
+        badge.tintColor = .white
+        badge.contentMode = .scaleAspectFit
+        badge.translatesAutoresizingMaskIntoConstraints = false
+
+        let badgeContainer = UIView()
+        badgeContainer.backgroundColor = .systemIndigo
+        badgeContainer.layer.cornerRadius = 20
+        badgeContainer.translatesAutoresizingMaskIntoConstraints = false
+        badgeContainer.addSubview(badge)
+
+        let titleLabel = UILabel()
+        titleLabel.text = "Secure PIN"
+        titleLabel.font = .systemFont(ofSize: 34, weight: .bold)
+        titleLabel.textColor = .label
+        titleLabel.adjustsFontForContentSizeCategory = true
+
+        let subtitleLabel = UILabel()
+        subtitleLabel.text = "Create a 4-digit code"
+        subtitleLabel.font = .systemFont(ofSize: 16, weight: .regular)
+        subtitleLabel.textColor = .secondaryLabel
+        subtitleLabel.numberOfLines = 0
+
+        let titleStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+        titleStack.axis = .vertical
+        titleStack.spacing = 4
+
+        let headerStack = UIStackView(arrangedSubviews: [badgeContainer, titleStack])
+        headerStack.axis = .horizontal
+        headerStack.alignment = .center
+        headerStack.spacing = 14
+
+        let pinPanel = UIView()
+        pinPanel.backgroundColor = .systemBackground
+        pinPanel.layer.cornerRadius = 18
+        pinPanel.layer.cornerCurve = .continuous
+        pinPanel.layer.borderWidth = 1
+        pinPanel.layer.borderColor = UIColor.separator.withAlphaComponent(0.45).cgColor
+        pinPanel.translatesAutoresizingMaskIntoConstraints = false
+
+        statusPill.backgroundColor = UIColor.systemIndigo.withAlphaComponent(0.10)
+        statusPill.layer.cornerRadius = 14
+        statusPill.layer.cornerCurve = .continuous
+        statusPill.translatesAutoresizingMaskIntoConstraints = false
+
+        statusIcon.tintColor = .systemIndigo
+        statusIcon.contentMode = .scaleAspectFit
+        statusIcon.translatesAutoresizingMaskIntoConstraints = false
 
         statusLabel.font = .systemFont(ofSize: 14)
-        statusLabel.textColor = .secondaryLabel
+        statusLabel.textColor = .systemIndigo
         statusLabel.numberOfLines = 0
-        statusLabel.text = "Enter a 4-digit PIN using the secure keyboard below."
+        statusLabel.text = "Ready"
 
-        let contentStack = UIStackView(arrangedSubviews: [header, pinField, confirmField, statusLabel])
+        let statusStack = UIStackView(arrangedSubviews: [statusIcon, statusLabel])
+        statusStack.axis = .horizontal
+        statusStack.alignment = .center
+        statusStack.spacing = 8
+        statusStack.translatesAutoresizingMaskIntoConstraints = false
+        statusPill.addSubview(statusStack)
+
+        let fieldStack = UIStackView(arrangedSubviews: [pinField, confirmField, statusPill])
+        fieldStack.axis = .vertical
+        fieldStack.spacing = 18
+        fieldStack.translatesAutoresizingMaskIntoConstraints = false
+        pinPanel.addSubview(fieldStack)
+
+        let contentStack = UIStackView(arrangedSubviews: [headerStack, pinPanel])
         contentStack.axis = .vertical
-        contentStack.spacing = 24
-        contentStack.setCustomSpacing(32, after: header)
+        contentStack.spacing = 28
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         contentScrollView.addSubview(contentStack)
 
         keyboard.translatesAutoresizingMaskIntoConstraints = false
         contentRoot.addSubview(keyboard)
 
-        let keyboardPreferredHeight = keyboard.heightAnchor.constraint(equalToConstant: 320)
+        let keyboardPreferredHeight = keyboard.heightAnchor.constraint(equalToConstant: 340)
         keyboardPreferredHeight.priority = .defaultHigh
-        let keyboardMaxHeight = keyboard.heightAnchor.constraint(lessThanOrEqualTo: contentRoot.heightAnchor, multiplier: 0.44)
+        let keyboardMaxHeight = keyboard.heightAnchor.constraint(lessThanOrEqualTo: contentRoot.heightAnchor, multiplier: 0.46)
         keyboardMaxHeight.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
@@ -93,10 +152,29 @@ final class DashboardViewController: UIViewController {
             contentScrollView.trailingAnchor.constraint(equalTo: contentRoot.trailingAnchor),
             contentScrollView.bottomAnchor.constraint(equalTo: keyboard.topAnchor),
 
-            contentStack.topAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.topAnchor, constant: 24),
+            contentStack.topAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.topAnchor, constant: 34),
             contentStack.leadingAnchor.constraint(equalTo: contentScrollView.frameLayoutGuide.leadingAnchor, constant: 24),
             contentStack.trailingAnchor.constraint(equalTo: contentScrollView.frameLayoutGuide.trailingAnchor, constant: -24),
-            contentStack.bottomAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.bottomAnchor, constant: -20),
+            contentStack.bottomAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.bottomAnchor, constant: -24),
+
+            badgeContainer.widthAnchor.constraint(equalToConstant: 48),
+            badgeContainer.heightAnchor.constraint(equalToConstant: 48),
+            badge.centerXAnchor.constraint(equalTo: badgeContainer.centerXAnchor),
+            badge.centerYAnchor.constraint(equalTo: badgeContainer.centerYAnchor),
+            badge.widthAnchor.constraint(equalToConstant: 24),
+            badge.heightAnchor.constraint(equalToConstant: 24),
+
+            fieldStack.topAnchor.constraint(equalTo: pinPanel.topAnchor, constant: 22),
+            fieldStack.leadingAnchor.constraint(equalTo: pinPanel.leadingAnchor, constant: 18),
+            fieldStack.trailingAnchor.constraint(equalTo: pinPanel.trailingAnchor, constant: -18),
+            fieldStack.bottomAnchor.constraint(equalTo: pinPanel.bottomAnchor, constant: -18),
+
+            statusStack.topAnchor.constraint(equalTo: statusPill.topAnchor, constant: 9),
+            statusStack.leadingAnchor.constraint(equalTo: statusPill.leadingAnchor, constant: 12),
+            statusStack.trailingAnchor.constraint(equalTo: statusPill.trailingAnchor, constant: -12),
+            statusStack.bottomAnchor.constraint(equalTo: statusPill.bottomAnchor, constant: -9),
+            statusIcon.widthAnchor.constraint(equalToConstant: 14),
+            statusIcon.heightAnchor.constraint(equalToConstant: 14),
 
             keyboard.leadingAnchor.constraint(equalTo: contentRoot.leadingAnchor),
             keyboard.trailingAnchor.constraint(equalTo: contentRoot.trailingAnchor),
@@ -169,19 +247,16 @@ final class DashboardViewController: UIViewController {
 
     private func pinChanged() {
         guard pinField.isComplete, confirmField.isComplete else {
-            statusLabel.textColor = .secondaryLabel
-            statusLabel.text = "Enter a 4-digit PIN using the secure keyboard below."
+            setStatus("Ready", color: .systemIndigo, iconName: "lock.fill")
             return
         }
         let pinsMatch = pinField.securelyMatches(confirmField)
         clearSensitiveInput(sendsChange: false)
 
         if pinsMatch {
-            statusLabel.textColor = .systemGreen
-            statusLabel.text = "PINs match. Secure input was cleared."
+            setStatus("PINs match", color: .systemGreen, iconName: "checkmark.circle.fill")
         } else {
-            statusLabel.textColor = .systemRed
-            statusLabel.text = "PINs do not match. Secure input was cleared."
+            setStatus("PINs do not match", color: .systemRed, iconName: "xmark.circle.fill")
         }
     }
 
@@ -229,6 +304,14 @@ final class DashboardViewController: UIViewController {
         if isVisible {
             view.bringSubviewToFront(privacyShield)
         }
+    }
+
+    private func setStatus(_ text: String, color: UIColor, iconName: String) {
+        statusLabel.text = text
+        statusLabel.textColor = color
+        statusIcon.image = UIImage(systemName: iconName)
+        statusIcon.tintColor = color
+        statusPill.backgroundColor = color.withAlphaComponent(0.10)
     }
 
     @objc private func screenCaptureStateChanged() {
