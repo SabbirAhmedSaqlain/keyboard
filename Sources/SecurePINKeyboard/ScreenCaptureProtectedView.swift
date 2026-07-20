@@ -1,10 +1,12 @@
 import UIKit
 
+/// Hosts content inside UIKit's secure text-field canvas so screenshots /
+/// screen recordings render those regions as black / empty.
 public final class ScreenCaptureProtectedView: UIView {
 
     public let contentView = UIView()
 
-    private let secureTextField = UITextField(frame: .zero)
+    private let secureTextField = UITextField()
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
@@ -18,28 +20,33 @@ public final class ScreenCaptureProtectedView: UIView {
 
     public override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         let contentPoint = contentView.convert(point, from: self)
-        if let hitView = contentView.hitTest(contentPoint, with: event) {
+        if contentView.bounds.contains(contentPoint),
+           let hitView = contentView.hitTest(contentPoint, with: event) {
             return hitView
         }
-        return super.hitTest(point, with: event)
+        return nil
     }
 
     private func setup() {
-        backgroundColor = SecurePINStyle.surface
-        contentView.backgroundColor = SecurePINStyle.surface
+        backgroundColor = .clear
+        isUserInteractionEnabled = true
+        clipsToBounds = false
 
-        secureTextField.isSecureTextEntry = true
-        secureTextField.isUserInteractionEnabled = true
+        contentView.backgroundColor = .clear
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+
+        secureTextField.translatesAutoresizingMaskIntoConstraints = false
+        secureTextField.backgroundColor = .clear
+        secureTextField.isUserInteractionEnabled = false
         secureTextField.isAccessibilityElement = false
         secureTextField.accessibilityElementsHidden = true
-        secureTextField.backgroundColor = .clear
         secureTextField.borderStyle = .none
         secureTextField.textColor = .clear
         secureTextField.tintColor = .clear
         secureTextField.text = " "
-        secureTextField.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(secureTextField)
+        secureTextField.isSecureTextEntry = true
 
+        addSubview(secureTextField)
         NSLayoutConstraint.activate([
             secureTextField.topAnchor.constraint(equalTo: topAnchor),
             secureTextField.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -47,34 +54,31 @@ public final class ScreenCaptureProtectedView: UIView {
             secureTextField.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
 
+        // Force UIKit to build the secure canvas before we attach content.
         secureTextField.layoutIfNeeded()
 
-        guard let protectedCanvas = secureTextField.subviews.first else {
-            installUnprotectedFallback()
-            return
+        if let canvas = secureTextField.subviews.first {
+            canvas.isUserInteractionEnabled = true
+            canvas.backgroundColor = .clear
+            canvas.addSubview(contentView)
+            NSLayoutConstraint.activate([
+                contentView.topAnchor.constraint(equalTo: secureTextField.topAnchor),
+                contentView.leadingAnchor.constraint(equalTo: secureTextField.leadingAnchor),
+                contentView.trailingAnchor.constraint(equalTo: secureTextField.trailingAnchor),
+                contentView.bottomAnchor.constraint(equalTo: secureTextField.bottomAnchor)
+            ])
+        } else {
+            addSubview(contentView)
+            NSLayoutConstraint.activate([
+                contentView.topAnchor.constraint(equalTo: topAnchor),
+                contentView.leadingAnchor.constraint(equalTo: leadingAnchor),
+                contentView.trailingAnchor.constraint(equalTo: trailingAnchor),
+                contentView.bottomAnchor.constraint(equalTo: bottomAnchor)
+            ])
         }
 
-        protectedCanvas.backgroundColor = SecurePINStyle.surface
-        protectedCanvas.isUserInteractionEnabled = true
-        contentView.translatesAutoresizingMaskIntoConstraints = false
-        protectedCanvas.addSubview(contentView)
-
-        NSLayoutConstraint.activate([
-            contentView.topAnchor.constraint(equalTo: secureTextField.topAnchor),
-            contentView.leadingAnchor.constraint(equalTo: secureTextField.leadingAnchor),
-            contentView.trailingAnchor.constraint(equalTo: secureTextField.trailingAnchor),
-            contentView.bottomAnchor.constraint(equalTo: secureTextField.bottomAnchor)
-        ])
-    }
-
-    private func installUnprotectedFallback() {
-        contentView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(contentView)
-        NSLayoutConstraint.activate([
-            contentView.topAnchor.constraint(equalTo: topAnchor),
-            contentView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            contentView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            contentView.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
+        DispatchQueue.main.async { [weak self] in
+            self?.secureTextField.isSecureTextEntry = true
+        }
     }
 }
