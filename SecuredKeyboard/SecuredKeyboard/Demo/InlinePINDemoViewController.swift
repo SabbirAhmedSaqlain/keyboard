@@ -1,4 +1,5 @@
 import UIKit
+import SecurePINKeyboard
 
 /// Login-style screen: an inline `SecurePINFieldView` with the keypad
 /// sliding up from the bottom via `SecurePINKeyboardPanel`.

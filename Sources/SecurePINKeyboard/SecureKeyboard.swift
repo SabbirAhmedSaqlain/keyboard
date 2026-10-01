@@ -4,13 +4,21 @@ import UIKit
 ///
 /// Every component (`SecurePINKeyboardView`, `SecurePINFieldView`,
 /// `SecurePINKeyboardPanel`, `SecurePINTextFieldCoordinator`,
-/// `SecurePINEntryViewController`) reads `SecureKeyboard.configuration` unless
+/// `SecurePINEntryViewController`, `ScreenshotProtectedViewController`,
+/// `SecureKeyboardSettingsViewController`) reads `SecureKeyboard.configuration` unless
 /// it is handed its own configuration, so one call to `configure(...)` at app
 /// launch themes and tunes all of them.
+@MainActor
 public enum SecureKeyboard {
 
+    /// Posted after the app-wide `configuration` changes (via `configure` with
+    /// `applyGlobally: true` or `resetConfiguration()`).
+    public static let configurationDidChangeNotification = Notification.Name("SecureKeyboardConfigurationDidChange")
+
     /// The configuration components use by default.
-    public private(set) static var configuration = SecureKeyboardConfiguration()
+    public private(set) static var configuration = SecureKeyboardConfiguration() {
+        didSet { NotificationCenter.default.post(name: configurationDidChangeNotification, object: nil) }
+    }
 
     /// Customises the secure keyboard from a single place.
     ///
@@ -40,6 +48,7 @@ public enum SecureKeyboard {
         accessoryKey: SecureKeyboardAccessoryKey? = nil,
         // Security
         protectsAgainstScreenCapture: Bool? = nil,
+        preventsScreenshots: Bool? = nil,
         clearsOnScreenshot: Bool? = nil,
         clearsWhenAppResignsActive: Bool? = nil,
         // Theme
@@ -86,6 +95,7 @@ public enum SecureKeyboard {
         if let accessoryKey { config.accessoryKey = accessoryKey }
 
         if let protectsAgainstScreenCapture { config.protectsAgainstScreenCapture = protectsAgainstScreenCapture }
+        if let preventsScreenshots { config.preventsScreenshots = preventsScreenshots }
         if let clearsOnScreenshot { config.clearsOnScreenshot = clearsOnScreenshot }
         if let clearsWhenAppResignsActive { config.clearsWhenAppResignsActive = clearsWhenAppResignsActive }
 

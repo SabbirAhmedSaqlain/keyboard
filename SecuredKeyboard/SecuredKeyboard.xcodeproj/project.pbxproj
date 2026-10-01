@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		84AA0001306E1A500008F0E6 /* SecurePINKeyboard in Frameworks */ = {isa = PBXBuildFile; productRef = 84AA0002306E1A500008F0E6 /* SecurePINKeyboard */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		8416896A306E1A410008F0E6 /* SecuredKeyboard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SecuredKeyboard.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -36,6 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				84AA0001306E1A500008F0E6 /* SecurePINKeyboard in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +83,7 @@
 			);
 			name = SecuredKeyboard;
 			packageProductDependencies = (
+				84AA0002306E1A500008F0E6 /* SecurePINKeyboard */,
 			);
 			productName = SecuredKeyboard;
 			productReference = 8416896A306E1A410008F0E6 /* SecuredKeyboard.app */;
@@ -107,6 +113,9 @@
 			);
 			mainGroup = 84168961306E1A410008F0E6;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				84AA0003306E1A500008F0E6 /* XCLocalSwiftPackageReference ".." */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8416896B306E1A410008F0E6 /* Products */;
 			projectDirPath = "";
@@ -145,6 +154,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2UZAVNXXC5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SecuredKeyboard/Info.plist;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -175,6 +185,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2UZAVNXXC5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SecuredKeyboard/Info.plist;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -339,6 +350,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		84AA0003306E1A500008F0E6 /* XCLocalSwiftPackageReference ".." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		84AA0002306E1A500008F0E6 /* SecurePINKeyboard */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SecurePINKeyboard;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 84168962306E1A410008F0E6 /* Project object */;
 }

@@ -1,6 +1,11 @@
 import Darwin
 import Foundation
 
+/// Fixed-capacity digit storage that zeroes its memory on clear and on deinit,
+/// so the PIN never lives in a `String` and never lingers after use.
+///
+/// Deliberately not actor-isolated so `deinit` can always wipe the bytes,
+/// even when the host app uses main-actor default isolation.
 final class SecurePINBuffer {
 
     private let capacity: Int
@@ -8,7 +13,7 @@ final class SecurePINBuffer {
     private(set) var count = 0
 
     init(capacity: Int) {
-        precondition(capacity > 0 && capacity <= 12)
+        precondition(capacity > 0 && capacity <= SecureKeyboardConfiguration.maximumPINLength)
         self.capacity = capacity
         self.storage = Array(repeating: 0, count: capacity)
     }
@@ -46,8 +51,9 @@ final class SecurePINBuffer {
         Array(storage.prefix(count))
     }
 
+    /// Compares without early exit so timing does not reveal where the PINs differ.
     func constantTimeEquals(_ other: SecurePINBuffer) -> Bool {
-        var difference = UInt8(count ^ other.count)
+        var difference = UInt8(truncatingIfNeeded: count ^ other.count)
         let maxCapacity = max(capacity, other.capacity)
 
         for index in 0..<maxCapacity {
@@ -66,5 +72,18 @@ final class SecurePINBuffer {
                 _ = memset(baseAddress, 0, bytes.count)
             }
         }
+    }
+}
+
+public extension Array where Element == UInt8 {
+    /// Overwrites the bytes with zeros and empties the array. Call on the PIN
+    /// returned by `copyPINBytes()` / the entry delegate once you are done.
+    mutating func secureWipe() {
+        withUnsafeMutableBytes { bytes in
+            if let baseAddress = bytes.baseAddress {
+                _ = memset(baseAddress, 0, bytes.count)
+            }
+        }
+        removeAll()
     }
 }

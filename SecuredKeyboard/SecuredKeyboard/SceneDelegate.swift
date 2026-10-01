@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import SecurePINKeyboard
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
@@ -19,14 +20,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         SecureKeyboard.configure(
             pinLength: 4,
             shuffleMode: .onAppear,
-            accentColor: DemoAccent.indigo.color
+            preventsScreenshots: true
         )
 
         let navigationController = UINavigationController(rootViewController: ViewController())
         navigationController.navigationBar.prefersLargeTitles = true
 
+        // Every screen pushed on this stack is blank in screenshots and
+        // recordings while `preventsScreenshots` is on.
         let window = UIWindow(windowScene: windowScene)
-        window.rootViewController = navigationController
+        window.rootViewController = ScreenshotProtectedViewController(rootViewController: navigationController)
         window.makeKeyAndVisible()
         self.window = window
     }

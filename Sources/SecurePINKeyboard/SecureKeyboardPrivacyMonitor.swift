@@ -3,6 +3,7 @@ import UIKit
 /// Watches the system events that should wipe or hide secure input and reports
 /// them through one callback. Shared by every secure keyboard component so the
 /// observation logic lives in one place.
+@MainActor
 public final class SecureKeyboardPrivacyMonitor: NSObject {
 
     public enum Event {

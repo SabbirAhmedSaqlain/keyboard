@@ -1,141 +1,164 @@
 import UIKit
 
+public enum SecurePINEntryError: Error, Equatable {
+    case confirmationMismatch
+    case inputLocked
+}
+
+@MainActor
+public protocol SecurePINEntryViewControllerDelegate: AnyObject {
+    /// `pin` holds one digit (0-9) per byte. Call `secureWipe()` on it when done.
+    func securePINEntryViewController(_ controller: SecurePINEntryViewController, didCompleteWith pin: [UInt8])
+    func securePINEntryViewController(_ controller: SecurePINEntryViewController, didFailWith error: SecurePINEntryError)
+    func securePINEntryViewControllerDidClearSensitiveInput(_ controller: SecurePINEntryViewController)
+}
+
+public extension SecurePINEntryViewControllerDelegate {
+    func securePINEntryViewController(_ controller: SecurePINEntryViewController, didFailWith error: SecurePINEntryError) {}
+    func securePINEntryViewControllerDidClearSensitiveInput(_ controller: SecurePINEntryViewController) {}
+}
+
+/// Full-screen PIN entry with a built-in secure keypad.
+///
+/// `configuration.entryMode` picks between asking once (`.singleEntry`) and
+/// asking twice and comparing in constant time (`.confirmEntry`, for set /
+/// change PIN). The whole screen is rendered in the capture-protected canvas.
 public final class SecurePINEntryViewController: UIViewController {
 
     public weak var delegate: SecurePINEntryViewControllerDelegate?
+    public let configuration: SecureKeyboardConfiguration
 
-    private let configuration: SecurePINConfiguration
-    private let primaryField: SecurePINInputView
-    private let confirmationField: SecurePINInputView?
-    private let keyboard = SecurePINKeyboardView()
+    private let primaryField: SecurePINFieldView
+    private let confirmationField: SecurePINFieldView?
+    private let keyboard: SecurePINKeyboardView
     private let protectedContentView = ScreenCaptureProtectedView()
     private let statusPill = UIView()
-    private let statusIcon = UIImageView(image: SecurePINStyle.image(named: "lock.fill"))
+    private let statusIcon = UIImageView(image: UIImage(systemName: "lock.fill"))
     private let statusLabel = UILabel()
-    private let privacyShield = UIView()
-    private let privacyShieldLabel = UILabel()
-    private let privacyShieldIcon = UIImageView(image: SecurePINStyle.image(named: "lock.shield"))
+    private let shield: SecureKeyboardPrivacyShieldView
+    private let privacyMonitor = SecureKeyboardPrivacyMonitor()
 
-    private var activeField: SecurePINInputView?
+    private var activeField: SecurePINFieldView?
     private var isInputLocked = false
 
-    public init(configuration: SecurePINConfiguration = SecurePINConfiguration()) {
+    public init(configuration: SecureKeyboardConfiguration? = nil) {
+        // `nil` = the app-wide `SecureKeyboard.configuration`.
+        let configuration = configuration ?? SecureKeyboard.configuration
         self.configuration = configuration
-        self.primaryField = SecurePINInputView(
-            title: configuration.primaryPINTitle,
-            length: configuration.pinLength,
-            accentColor: configuration.accentColor
-        )
-        if configuration.mode == .confirmEntry {
-            self.confirmationField = SecurePINInputView(
-                title: configuration.confirmationPINTitle,
-                length: configuration.pinLength,
-                accentColor: configuration.accentColor
-            )
+        self.primaryField = SecurePINFieldView(title: configuration.texts.primaryPINTitle, configuration: configuration)
+        if configuration.entryMode == .confirmEntry {
+            self.confirmationField = SecurePINFieldView(title: configuration.texts.confirmationPINTitle, configuration: configuration)
         } else {
             self.confirmationField = nil
         }
+        self.keyboard = SecurePINKeyboardView(configuration: configuration)
+        self.shield = SecureKeyboardPrivacyShieldView(configuration: configuration)
         super.init(nibName: nil, bundle: nil)
     }
 
     public required init?(coder: NSCoder) {
-        self.configuration = SecurePINConfiguration()
-        self.primaryField = SecurePINInputView(title: "Enter PIN")
-        self.confirmationField = SecurePINInputView(title: "Confirm PIN")
-        super.init(coder: coder)
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(self)
+        fatalError("init(coder:) is not supported; use init(configuration:)")
     }
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        title = configuration.title
-        view.backgroundColor = SecurePINStyle.appBackground
+        view.backgroundColor = .systemGroupedBackground
+        navigationItem.largeTitleDisplayMode = .never
 
         setupLayout()
-        setupPrivacyShield()
-        registerPrivacyObservers()
+        setupShield()
 
-        primaryField.onActivate = { [weak self] field in self?.activate(field) }
-        primaryField.onChange = { [weak self] _ in self?.pinChanged() }
-        confirmationField?.onActivate = { [weak self] field in self?.activate(field) }
-        confirmationField?.onChange = { [weak self] _ in self?.pinChanged() }
-
+        for field in [primaryField, confirmationField].compactMap({ $0 }) {
+            field.onActivate = { [weak self] field in self?.activate(field) }
+            field.onChange = { [weak self] _ in self?.pinChanged() }
+        }
         keyboard.delegate = self
-        keyboard.shufflesAfterEachTap = configuration.shufflesAfterEachTap
+        privacyMonitor.referenceView = view
+        privacyMonitor.onEvent = { [weak self] event in self?.handle(event) }
 
         activate(primaryField)
+    }
+
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
         refreshPrivacyState()
     }
 
+    public override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        clearSensitiveInput(sendsChange: false)
+    }
+
+    /// Wipes everything typed so far and starts over at the first field.
     public func clearSensitiveInput() {
         clearSensitiveInput(sendsChange: true)
         delegate?.securePINEntryViewControllerDidClearSensitiveInput(self)
     }
 
-    public func lockForPrivacy(reason: String) {
+    /// Clears the input and covers the screen with `reason`.
+    public func lockForPrivacy(reason: String, allowsContinue: Bool = false) {
         clearSensitiveInput()
-        setPrivacyShield(isVisible: true, reason: reason)
+        setInputLocked(true)
+        shield.show(message: reason, allowsContinue: allowsContinue)
     }
 
+    /// Removes the cover unless recording or device lock still require it.
     public func refreshPrivacyState() {
-        if configuration.protectsAgainstScreenCapture, UIScreen.main.isCaptured {
-            lockForPrivacy(reason: "Screen capture detected. Secure input is hidden.")
-            return
+        if configuration.protectsAgainstScreenCapture && privacyMonitor.isScreenCaptured {
+            lockForPrivacy(reason: configuration.texts.shieldScreenCapture)
+        } else if !privacyMonitor.isProtectedDataAvailable {
+            lockForPrivacy(reason: configuration.texts.shieldDeviceLocked)
+        } else {
+            setInputLocked(false)
+            shield.hide()
         }
-
-        if !UIApplication.shared.isProtectedDataAvailable {
-            lockForPrivacy(reason: "Protected data is unavailable. Secure input is hidden.")
-            return
-        }
-
-        setPrivacyShield(isVisible: false, reason: nil)
     }
+
+    /// Pops when pushed, dismisses when presented.
+    public func close() {
+        if let navigationController, navigationController.viewControllers.first !== self {
+            navigationController.popViewController(animated: true)
+        } else {
+            dismiss(animated: true)
+        }
+    }
+
+    // MARK: Layout
 
     private func setupLayout() {
         protectedContentView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(protectedContentView)
         let contentRoot = protectedContentView.contentView
-        contentRoot.backgroundColor = SecurePINStyle.appBackground
+        contentRoot.backgroundColor = .systemGroupedBackground
 
-        let contentScrollView = UIScrollView()
-        contentScrollView.alwaysBounceVertical = false
-        contentScrollView.showsVerticalScrollIndicator = false
-        contentScrollView.contentInsetAdjustmentBehavior = .never
-        contentScrollView.translatesAutoresizingMaskIntoConstraints = false
-        contentRoot.addSubview(contentScrollView)
+        let scrollView = UIScrollView()
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.alwaysBounceVertical = false
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        contentRoot.addSubview(scrollView)
 
-        let badge = UIImageView(image: SecurePINStyle.image(named: "lock.shield.fill"))
+        let badge = UIImageView(image: UIImage(systemName: "lock.shield.fill"))
         badge.tintColor = .white
         badge.contentMode = .scaleAspectFit
         badge.translatesAutoresizingMaskIntoConstraints = false
-        let badgeFallback = UILabel()
-        badgeFallback.text = "PIN"
-        badgeFallback.font = .systemFont(ofSize: 11, weight: .bold)
-        badgeFallback.textColor = .white
-        badgeFallback.textAlignment = .center
-        badgeFallback.translatesAutoresizingMaskIntoConstraints = false
-        badgeFallback.isHidden = badge.image != nil
 
         let badgeContainer = UIView()
         badgeContainer.backgroundColor = configuration.accentColor
-        badgeContainer.layer.cornerRadius = 20
+        badgeContainer.layer.cornerRadius = 14
+        badgeContainer.layer.cornerCurve = .continuous
         badgeContainer.translatesAutoresizingMaskIntoConstraints = false
         badgeContainer.addSubview(badge)
-        badgeContainer.addSubview(badgeFallback)
 
         let titleLabel = UILabel()
-        titleLabel.text = configuration.title
-        titleLabel.font = .systemFont(ofSize: 34, weight: .bold)
-        titleLabel.textColor = SecurePINStyle.primaryText
-        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.text = configuration.texts.title
+        titleLabel.font = .systemFont(ofSize: 28, weight: .bold)
+        titleLabel.textColor = .label
+        titleLabel.numberOfLines = 0
 
         let subtitleLabel = UILabel()
-        subtitleLabel.text = configuration.subtitle
-        subtitleLabel.font = .systemFont(ofSize: 16, weight: .regular)
-        subtitleLabel.textColor = SecurePINStyle.secondaryText
+        subtitleLabel.text = configuration.texts.subtitle
+        subtitleLabel.font = .systemFont(ofSize: 16)
+        subtitleLabel.textColor = .secondaryLabel
         subtitleLabel.numberOfLines = 0
 
         let titleStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
@@ -148,26 +171,19 @@ public final class SecurePINEntryViewController: UIViewController {
         headerStack.spacing = 14
 
         let pinPanel = UIView()
-        pinPanel.backgroundColor = SecurePINStyle.surface
+        pinPanel.backgroundColor = .systemBackground
         pinPanel.layer.cornerRadius = 18
-        SecurePINStyle.applyContinuousCornerCurve(to: pinPanel.layer)
-        pinPanel.layer.borderWidth = 1
-        pinPanel.layer.borderColor = SecurePINStyle.separator.withAlphaComponent(0.45).cgColor
+        pinPanel.layer.cornerCurve = .continuous
         pinPanel.translatesAutoresizingMaskIntoConstraints = false
 
-        statusPill.backgroundColor = configuration.accentColor.withAlphaComponent(0.10)
         statusPill.layer.cornerRadius = 14
-        SecurePINStyle.applyContinuousCornerCurve(to: statusPill.layer)
+        statusPill.layer.cornerCurve = .continuous
         statusPill.translatesAutoresizingMaskIntoConstraints = false
 
-        statusIcon.tintColor = configuration.accentColor
         statusIcon.contentMode = .scaleAspectFit
         statusIcon.translatesAutoresizingMaskIntoConstraints = false
-
-        statusLabel.font = .systemFont(ofSize: 14)
-        statusLabel.textColor = configuration.accentColor
+        statusLabel.font = .systemFont(ofSize: 14, weight: .medium)
         statusLabel.numberOfLines = 0
-        statusLabel.text = "Ready"
 
         let statusStack = UIStackView(arrangedSubviews: [statusIcon, statusLabel])
         statusStack.axis = .horizontal
@@ -175,14 +191,9 @@ public final class SecurePINEntryViewController: UIViewController {
         statusStack.spacing = 8
         statusStack.translatesAutoresizingMaskIntoConstraints = false
         statusPill.addSubview(statusStack)
+        setReadyStatus()
 
-        var fieldViews: [UIView] = [primaryField]
-        if let confirmationField {
-            fieldViews.append(confirmationField)
-        }
-        fieldViews.append(statusPill)
-
-        let fieldStack = UIStackView(arrangedSubviews: fieldViews)
+        let fieldStack = UIStackView(arrangedSubviews: [primaryField, confirmationField, statusPill].compactMap { $0 })
         fieldStack.axis = .vertical
         fieldStack.spacing = 18
         fieldStack.translatesAutoresizingMaskIntoConstraints = false
@@ -190,17 +201,14 @@ public final class SecurePINEntryViewController: UIViewController {
 
         let contentStack = UIStackView(arrangedSubviews: [headerStack, pinPanel])
         contentStack.axis = .vertical
-        contentStack.spacing = 28
+        contentStack.spacing = 24
         contentStack.translatesAutoresizingMaskIntoConstraints = false
-        contentScrollView.addSubview(contentStack)
+        scrollView.addSubview(contentStack)
 
         keyboard.translatesAutoresizingMaskIntoConstraints = false
         contentRoot.addSubview(keyboard)
-
-        let keyboardPreferredHeight = keyboard.heightAnchor.constraint(equalToConstant: 340)
-        keyboardPreferredHeight.priority = .defaultHigh
-        let keyboardMaxHeight = keyboard.heightAnchor.constraint(lessThanOrEqualTo: contentRoot.heightAnchor, multiplier: 0.46)
-        keyboardMaxHeight.priority = .defaultHigh
+        // Leave room for the PIN on short screens / landscape.
+        let keyboardMaxHeight = keyboard.heightAnchor.constraint(lessThanOrEqualTo: contentRoot.heightAnchor, multiplier: 0.55)
 
         NSLayoutConstraint.activate([
             protectedContentView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -208,15 +216,15 @@ public final class SecurePINEntryViewController: UIViewController {
             protectedContentView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             protectedContentView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            contentScrollView.topAnchor.constraint(equalTo: contentRoot.safeAreaLayoutGuide.topAnchor),
-            contentScrollView.leadingAnchor.constraint(equalTo: contentRoot.leadingAnchor),
-            contentScrollView.trailingAnchor.constraint(equalTo: contentRoot.trailingAnchor),
-            contentScrollView.bottomAnchor.constraint(equalTo: keyboard.topAnchor),
+            scrollView.topAnchor.constraint(equalTo: contentRoot.safeAreaLayoutGuide.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: contentRoot.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: contentRoot.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: keyboard.topAnchor),
 
-            contentStack.topAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.topAnchor, constant: 34),
-            contentStack.leadingAnchor.constraint(equalTo: contentScrollView.frameLayoutGuide.leadingAnchor, constant: 24),
-            contentStack.trailingAnchor.constraint(equalTo: contentScrollView.frameLayoutGuide.trailingAnchor, constant: -24),
-            contentStack.bottomAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.bottomAnchor, constant: -24),
+            contentStack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 24),
+            contentStack.leadingAnchor.constraint(equalTo: scrollView.frameLayoutGuide.leadingAnchor, constant: 20),
+            contentStack.trailingAnchor.constraint(equalTo: scrollView.frameLayoutGuide.trailingAnchor, constant: -20),
+            contentStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -24),
 
             badgeContainer.widthAnchor.constraint(equalToConstant: 48),
             badgeContainer.heightAnchor.constraint(equalToConstant: 48),
@@ -224,12 +232,8 @@ public final class SecurePINEntryViewController: UIViewController {
             badge.centerYAnchor.constraint(equalTo: badgeContainer.centerYAnchor),
             badge.widthAnchor.constraint(equalToConstant: 24),
             badge.heightAnchor.constraint(equalToConstant: 24),
-            badgeFallback.centerXAnchor.constraint(equalTo: badgeContainer.centerXAnchor),
-            badgeFallback.centerYAnchor.constraint(equalTo: badgeContainer.centerYAnchor),
-            badgeFallback.leadingAnchor.constraint(equalTo: badgeContainer.leadingAnchor, constant: 4),
-            badgeFallback.trailingAnchor.constraint(equalTo: badgeContainer.trailingAnchor, constant: -4),
 
-            fieldStack.topAnchor.constraint(equalTo: pinPanel.topAnchor, constant: 22),
+            fieldStack.topAnchor.constraint(equalTo: pinPanel.topAnchor, constant: 20),
             fieldStack.leadingAnchor.constraint(equalTo: pinPanel.leadingAnchor, constant: 18),
             fieldStack.trailingAnchor.constraint(equalTo: pinPanel.trailingAnchor, constant: -18),
             fieldStack.bottomAnchor.constraint(equalTo: pinPanel.bottomAnchor, constant: -18),
@@ -244,166 +248,103 @@ public final class SecurePINEntryViewController: UIViewController {
             keyboard.leadingAnchor.constraint(equalTo: contentRoot.leadingAnchor),
             keyboard.trailingAnchor.constraint(equalTo: contentRoot.trailingAnchor),
             keyboard.bottomAnchor.constraint(equalTo: contentRoot.bottomAnchor),
-            keyboardPreferredHeight,
             keyboardMaxHeight
         ])
     }
 
-    private func setupPrivacyShield() {
-        privacyShield.backgroundColor = SecurePINStyle.surface
-        privacyShield.isHidden = true
-        privacyShield.translatesAutoresizingMaskIntoConstraints = false
-        privacyShield.accessibilityViewIsModal = true
-        privacyShield.isAccessibilityElement = true
-        privacyShield.accessibilityLabel = "Secure input hidden"
-        view.addSubview(privacyShield)
-
-        privacyShieldIcon.tintColor = SecurePINStyle.primaryText
-        privacyShieldIcon.contentMode = .scaleAspectFit
-        privacyShieldIcon.translatesAutoresizingMaskIntoConstraints = false
-        privacyShieldIcon.setContentHuggingPriority(.required, for: .vertical)
-
-        privacyShieldLabel.font = .systemFont(ofSize: 17, weight: .semibold)
-        privacyShieldLabel.textAlignment = .center
-        privacyShieldLabel.textColor = SecurePINStyle.primaryText
-        privacyShieldLabel.numberOfLines = 0
-
-        let stack = UIStackView(arrangedSubviews: [privacyShieldIcon, privacyShieldLabel])
-        stack.axis = .vertical
-        stack.alignment = .center
-        stack.spacing = 16
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        privacyShield.addSubview(stack)
-
+    private func setupShield() {
+        shield.translatesAutoresizingMaskIntoConstraints = false
+        shield.onContinue = { [weak self] in self?.refreshPrivacyState() }
+        view.addSubview(shield)
         NSLayoutConstraint.activate([
-            privacyShield.topAnchor.constraint(equalTo: view.topAnchor),
-            privacyShield.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            privacyShield.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            privacyShield.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-
-            privacyShieldIcon.widthAnchor.constraint(equalToConstant: 44),
-            privacyShieldIcon.heightAnchor.constraint(equalToConstant: 44),
-
-            stack.centerXAnchor.constraint(equalTo: privacyShield.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: privacyShield.centerYAnchor),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: privacyShield.leadingAnchor, constant: 32),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: privacyShield.trailingAnchor, constant: -32)
+            shield.topAnchor.constraint(equalTo: view.topAnchor),
+            shield.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            shield.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            shield.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
     }
 
-    private func registerPrivacyObservers() {
-        let center = NotificationCenter.default
-        center.addObserver(self, selector: #selector(screenCaptureStateChanged), name: UIScreen.capturedDidChangeNotification, object: nil)
-        center.addObserver(self, selector: #selector(protectedDataWillBecomeUnavailable), name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
-        center.addObserver(self, selector: #selector(protectedDataDidBecomeAvailable), name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
-        center.addObserver(self, selector: #selector(userDidTakeScreenshot), name: UIApplication.userDidTakeScreenshotNotification, object: nil)
-        center.addObserver(self, selector: #selector(appDidBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
-        if configuration.clearsWhenAppResignsActive {
-            center.addObserver(self, selector: #selector(appWillResignActive), name: UIApplication.willResignActiveNotification, object: nil)
-        }
-    }
+    // MARK: Input
 
-    private func activate(_ field: SecurePINInputView) {
+    private func activate(_ field: SecurePINFieldView) {
         guard !isInputLocked else { return }
-        setActiveField(field)
-    }
-
-    private func setActiveField(_ field: SecurePINInputView) {
         activeField = field
         primaryField.isActive = field === primaryField
         confirmationField?.isActive = field === confirmationField
     }
 
     private func pinChanged() {
-        switch configuration.mode {
+        switch configuration.entryMode {
         case .singleEntry:
-            guard primaryField.isComplete else {
-                setStatus("Ready", color: configuration.accentColor, iconName: "lock.fill")
-                return
-            }
+            guard primaryField.isComplete else { return setReadyStatus() }
             let pin = primaryField.copyPINBytes()
             clearSensitiveInput(sendsChange: false)
-            setStatus("PIN entered", color: .systemGreen, iconName: "checkmark.circle.fill")
+            setStatus(configuration.texts.statusEntered, color: configuration.successColor, iconName: "checkmark.circle.fill")
             delegate?.securePINEntryViewController(self, didCompleteWith: pin)
 
         case .confirmEntry:
-            guard let confirmationField else { return }
-            guard primaryField.isComplete, confirmationField.isComplete else {
-                setStatus("Ready", color: configuration.accentColor, iconName: "lock.fill")
-                return
+            guard let confirmationField, primaryField.isComplete, confirmationField.isComplete else {
+                return setReadyStatus()
             }
-
             if primaryField.securelyMatches(confirmationField) {
                 let pin = primaryField.copyPINBytes()
                 clearSensitiveInput(sendsChange: false)
-                setStatus("PINs match", color: .systemGreen, iconName: "checkmark.circle.fill")
+                setStatus(configuration.texts.statusMatched, color: configuration.successColor, iconName: "checkmark.circle.fill")
                 delegate?.securePINEntryViewController(self, didCompleteWith: pin)
             } else {
                 clearSensitiveInput(sendsChange: false)
-                setStatus("PINs do not match", color: .systemRed, iconName: "xmark.circle.fill")
+                primaryField.showError()
+                confirmationField.showError()
+                setStatus(configuration.texts.statusMismatch, color: configuration.errorColor, iconName: "xmark.circle.fill")
                 delegate?.securePINEntryViewController(self, didFailWith: .confirmationMismatch)
             }
         }
     }
 
     private func clearSensitiveInput(sendsChange: Bool) {
-        primaryField.clear(sendsChange: sendsChange)
-        confirmationField?.clear(sendsChange: sendsChange)
-        setActiveField(primaryField)
-        keyboard.shuffle()
-        if sendsChange {
-            pinChanged()
-        }
+        primaryField.clear(sendsChange: false)
+        confirmationField?.clear(sendsChange: false)
+        isInputLocked = false
+        activate(primaryField)
+        keyboard.reshuffleIfNeeded()
+        if sendsChange { setReadyStatus() }
     }
 
-    private func setPrivacyShield(isVisible: Bool, reason: String?) {
-        isInputLocked = isVisible
-        primaryField.isUserInteractionEnabled = !isVisible
-        confirmationField?.isUserInteractionEnabled = !isVisible
-        keyboard.isUserInteractionEnabled = !isVisible
+    private func setInputLocked(_ locked: Bool) {
+        isInputLocked = locked
+        primaryField.isUserInteractionEnabled = !locked
+        confirmationField?.isUserInteractionEnabled = !locked
+        keyboard.isUserInteractionEnabled = !locked
+    }
 
-        if let reason {
-            privacyShieldLabel.text = reason
-            privacyShield.accessibilityValue = reason
-        }
-
-        privacyShield.isHidden = !isVisible
-        if isVisible {
-            view.bringSubviewToFront(privacyShield)
-        }
+    private func setReadyStatus() {
+        setStatus(configuration.texts.statusReady, color: configuration.accentColor, iconName: "lock.fill")
     }
 
     private func setStatus(_ text: String, color: UIColor, iconName: String) {
         statusLabel.text = text
         statusLabel.textColor = color
-        statusIcon.image = SecurePINStyle.image(named: iconName)
+        statusIcon.image = UIImage(systemName: iconName)
         statusIcon.tintColor = color
         statusPill.backgroundColor = color.withAlphaComponent(0.10)
     }
 
-    @objc private func screenCaptureStateChanged() {
-        refreshPrivacyState()
-    }
+    // MARK: Privacy
 
-    @objc private func protectedDataWillBecomeUnavailable() {
-        lockForPrivacy(reason: "Device lock detected. Secure input was cleared.")
-    }
-
-    @objc private func protectedDataDidBecomeAvailable() {
-        refreshPrivacyState()
-    }
-
-    @objc private func userDidTakeScreenshot() {
-        guard configuration.clearsOnScreenshot else { return }
-        lockForPrivacy(reason: "Screenshot detected. Secure input was cleared.")
-    }
-
-    @objc private func appWillResignActive() {
-        lockForPrivacy(reason: "App inactive. Secure input was cleared.")
-    }
-
-    @objc private func appDidBecomeActive() {
-        refreshPrivacyState()
+    private func handle(_ event: SecureKeyboardPrivacyMonitor.Event) {
+        let texts = configuration.texts
+        switch event {
+        case .screenCaptureStarted, .screenCaptureEnded, .appDidBecomeActive, .protectedDataDidBecomeAvailable:
+            refreshPrivacyState()
+        case .screenshotTaken:
+            guard configuration.clearsOnScreenshot else { return }
+            lockForPrivacy(reason: texts.shieldScreenshot, allowsContinue: true)
+        case .appWillResignActive:
+            guard configuration.clearsWhenAppResignsActive else { return }
+            lockForPrivacy(reason: texts.shieldAppInactive)
+        case .protectedDataWillBecomeUnavailable:
+            lockForPrivacy(reason: texts.shieldDeviceLocked)
+        }
     }
 }
 
@@ -432,6 +373,14 @@ extension SecurePINEntryViewController: SecurePINKeyboardViewDelegate {
             primaryField.deleteBackward()
         } else {
             field.deleteBackward()
+        }
+    }
+
+    public func securePINKeyboardView(_ keyboard: SecurePINKeyboardView, didTapAccessoryKey key: SecureKeyboardAccessoryKey) {
+        switch key {
+        case .clear: clearSensitiveInput()
+        case .done: close()
+        case .none: break
         }
     }
 }

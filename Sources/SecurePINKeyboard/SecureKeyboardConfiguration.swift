@@ -93,7 +93,7 @@ public struct SecureKeyboardTexts {
 /// individual component's `init(configuration:)`.
 public struct SecureKeyboardConfiguration {
 
-    nonisolated public static let maximumPINLength = 12
+    public static let maximumPINLength = 12
 
     // MARK: Behaviour
 
@@ -112,6 +112,10 @@ public struct SecureKeyboardConfiguration {
     /// and recordings show it blank, and hides input while the screen is
     /// being recorded / mirrored.
     public var protectsAgainstScreenCapture: Bool = true
+    /// Renders every screen hosted by `ScreenshotProtectedViewController` in
+    /// the secure canvas, so screenshots and recordings of it come out blank.
+    /// iOS has no API to stop the screenshot itself; this blanks its content.
+    public var preventsScreenshots: Bool = true
     public var clearsOnScreenshot: Bool = true
     public var clearsWhenAppResignsActive: Bool = true
 

@@ -51,7 +51,9 @@ public final class SecurePINFieldView: UIView {
 
     public init(title: String? = nil,
                 length: Int? = nil,
-                configuration: SecureKeyboardConfiguration = SecureKeyboard.configuration) {
+                configuration: SecureKeyboardConfiguration? = nil) {
+        // `nil` = the app-wide `SecureKeyboard.configuration`.
+        let configuration = configuration ?? SecureKeyboard.configuration
         let resolvedLength = max(1, min(length ?? configuration.pinLength, SecureKeyboardConfiguration.maximumPINLength))
         self.length = resolvedLength
         self.configuration = configuration

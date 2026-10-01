@@ -16,6 +16,7 @@ import UIKit
 ///     coordinator = SecurePINTextFieldCoordinator()
 ///     coordinator.register(currentPINField, title: "Current PIN")
 ///     coordinator.register(newPINField, title: "New PIN")
+@MainActor
 public final class SecurePINTextFieldCoordinator: NSObject {
 
     public let configuration: SecureKeyboardConfiguration
@@ -27,7 +28,9 @@ public final class SecurePINTextFieldCoordinator: NSObject {
     private var overlayByField: [ObjectIdentifier: SecurePINFieldView] = [:]
     private var maxLengthByField: [ObjectIdentifier: Int] = [:]
 
-    public init(configuration: SecureKeyboardConfiguration = SecureKeyboard.configuration) {
+    public init(configuration: SecureKeyboardConfiguration? = nil) {
+        // `nil` = the app-wide `SecureKeyboard.configuration`.
+        let configuration = configuration ?? SecureKeyboard.configuration
         self.configuration = configuration
         self.keyboard = SecurePINKeyboardView(configuration: configuration)
         self.inputContainer = UIInputView(frame: .zero, inputViewStyle: .default)

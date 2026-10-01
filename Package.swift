@@ -5,7 +5,7 @@ import PackageDescription
 let package = Package(
     name: "SecurePINKeyboard",
     platforms: [
-        .iOS(.v12)
+        .iOS(.v14)
     ],
     products: [
         .library(
@@ -18,5 +18,6 @@ let package = Package(
             name: "SecurePINKeyboard",
             path: "Sources/SecurePINKeyboard"
         )
-    ]
+    ],
+    swiftLanguageVersions: [.v5]
 )

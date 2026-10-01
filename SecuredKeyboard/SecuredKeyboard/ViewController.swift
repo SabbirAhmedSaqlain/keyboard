@@ -6,36 +6,15 @@
 //
 
 import UIKit
+import SecurePINKeyboard
 
-/// Accent colours offered by the demo settings.
-enum DemoAccent: Int, CaseIterable {
-    case indigo, teal, orange, pink
-
-    var title: String {
-        switch self {
-        case .indigo: return "Indigo"
-        case .teal: return "Teal"
-        case .orange: return "Orange"
-        case .pink: return "Pink"
-        }
-    }
-
-    var color: UIColor {
-        switch self {
-        case .indigo: return UIColor(red: 88 / 255, green: 86 / 255, blue: 214 / 255, alpha: 1)
-        case .teal: return .systemTeal
-        case .orange: return .systemOrange
-        case .pink: return .systemPink
-        }
-    }
-}
-
-/// Demo home: launches each secure keyboard component and edits the shared
-/// configuration through `SecureKeyboard.configure(...)`.
+/// Demo home: launches each secure keyboard component. The Configure button
+/// opens the package's `SecureKeyboardSettingsViewController`, which edits the
+/// shared configuration through `SecureKeyboard.configure(...)`.
 class ViewController: UITableViewController {
 
     private enum Section: Int, CaseIterable {
-        case demos, configuration, result
+        case demos, result
     }
 
     private enum Demo: Int, CaseIterable {
@@ -69,14 +48,7 @@ class ViewController: UITableViewController {
         }
     }
 
-    private enum Setting: Int, CaseIterable {
-        case pinLength, shuffle, fieldStyle, accessoryKey, accent
-        case haptics, captureProtection, clearOnScreenshot, clearOnInactive
-        case reset
-    }
-
-    private let pinLengths = [4, 5, 6]
-    private var accent: DemoAccent = .indigo
+    private let configureButton = UIButton(type: .system)
     private var lastResult = "No PIN entered yet"
 
     init() {
@@ -87,9 +59,52 @@ class ViewController: UITableViewController {
         super.init(coder: coder)
     }
 
+
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Secure Keyboard"
+        setupConfigureButton()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // Pick up accent changes made on the settings page.
+        updateConfigureButton()
+        tableView.reloadData()
+    }
+
+    // MARK: Configure button
+
+    private func setupConfigureButton() {
+        configureButton.addTarget(self, action: #selector(configureTapped), for: .touchUpInside)
+        configureButton.translatesAutoresizingMaskIntoConstraints = false
+        updateConfigureButton()
+
+        let header = UIView(frame: CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 76))
+        header.preservesSuperviewLayoutMargins = true
+        header.addSubview(configureButton)
+        NSLayoutConstraint.activate([
+            configureButton.topAnchor.constraint(equalTo: header.topAnchor, constant: 12),
+            configureButton.leadingAnchor.constraint(equalTo: header.layoutMarginsGuide.leadingAnchor),
+            configureButton.trailingAnchor.constraint(equalTo: header.layoutMarginsGuide.trailingAnchor),
+            configureButton.bottomAnchor.constraint(equalTo: header.bottomAnchor, constant: -8)
+        ])
+        tableView.tableHeaderView = header
+    }
+
+    private func updateConfigureButton() {
+        var config = UIButton.Configuration.filled()
+        config.title = "Configure Keyboard"
+        config.image = UIImage(systemName: "gearshape.fill")
+        config.imagePadding = 8
+        config.baseBackgroundColor = SecureKeyboard.configuration.accentColor
+        config.cornerStyle = .large
+        configureButton.configuration = config
+    }
+
+    @objc private func configureTapped() {
+        // Pushed (not presented) so it stays inside the screenshot-protected container.
+        navigationController?.pushViewController(SecureKeyboardSettingsViewController(), animated: true)
     }
 
     // MARK: Table
@@ -101,7 +116,6 @@ class ViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
         case .demos: return Demo.allCases.count
-        case .configuration: return Setting.allCases.count
         case .result: return 1
         }
     }
@@ -109,16 +123,15 @@ class ViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .demos: return "Demos"
-        case .configuration: return "SecureKeyboard.configure(...)"
         case .result: return "Last result"
         }
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
-        case .configuration:
-            return "Each control calls SecureKeyboard.configure with just the value it changes. Open a demo to see the result."
-        default:
+        case .demos:
+            return "Screenshots and recordings of this app come out blank while \"Block screenshots\" is on."
+        case .result:
             return nil
         }
     }
@@ -134,11 +147,8 @@ class ViewController: UITableViewController {
             content.secondaryText = demo.subtitle
             content.secondaryTextProperties.color = .secondaryLabel
             content.image = UIImage(systemName: demo.icon)
-            content.imageProperties.tintColor = accent.color
+            content.imageProperties.tintColor = SecureKeyboard.configuration.accentColor
             cell.accessoryType = .disclosureIndicator
-
-        case .configuration:
-            configureSettingCell(cell, content: &content, setting: Setting(rawValue: indexPath.row)!)
 
         case .result:
             content = UIListContentConfiguration.cell()
@@ -153,15 +163,8 @@ class ViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        switch Section(rawValue: indexPath.section)! {
-        case .demos:
+        if Section(rawValue: indexPath.section) == .demos {
             open(Demo(rawValue: indexPath.row)!)
-        case .configuration where Setting(rawValue: indexPath.row) == .reset:
-            SecureKeyboard.resetConfiguration()
-            accent = .indigo
-            tableView.reloadData()
-        default:
-            break
         }
     }
 
@@ -211,103 +214,6 @@ class ViewController: UITableViewController {
     private func showResult(_ text: String) {
         lastResult = text
         tableView.reloadSections(IndexSet(integer: Section.result.rawValue), with: .none)
-    }
-
-    // MARK: Settings
-
-    private func configureSettingCell(_ cell: UITableViewCell,
-                                      content: inout UIListContentConfiguration,
-                                      setting: Setting) {
-        content = UIListContentConfiguration.cell()
-        cell.selectionStyle = .none
-        let config = SecureKeyboard.configuration
-
-        switch setting {
-        case .pinLength:
-            content.text = "PIN length"
-            cell.accessoryView = segmented(pinLengths.map(String.init),
-                                           selected: pinLengths.firstIndex(of: config.pinLength) ?? 0) { [unowned self] index in
-                SecureKeyboard.configure(pinLength: self.pinLengths[index])
-            }
-
-        case .shuffle:
-            content.text = "Shuffle"
-            let modes: [SecureKeyboardShuffleMode] = [.never, .onAppear, .afterEachTap]
-            cell.accessoryView = segmented(["Off", "On open", "Each tap"],
-                                           selected: modes.firstIndex(of: config.shuffleMode) ?? 0) { index in
-                SecureKeyboard.configure(shuffleMode: modes[index])
-            }
-
-        case .fieldStyle:
-            content.text = "PIN style"
-            let styles: [SecurePINFieldStyle] = [.singleBox, .separateBoxes]
-            cell.accessoryView = segmented(["One box", "Boxes"],
-                                           selected: styles.firstIndex(of: config.fieldStyle) ?? 0) { index in
-                SecureKeyboard.configure(fieldStyle: styles[index])
-            }
-
-        case .accessoryKey:
-            content.text = "Extra key"
-            let keys: [SecureKeyboardAccessoryKey] = [.none, .clear, .done]
-            cell.accessoryView = segmented(["None", "Clear", "Done"],
-                                           selected: keys.firstIndex(of: config.accessoryKey) ?? 0) { index in
-                SecureKeyboard.configure(accessoryKey: keys[index])
-            }
-
-        case .accent:
-            content.text = "Accent"
-            cell.accessoryView = segmented(DemoAccent.allCases.map(\.title), selected: accent.rawValue) { [unowned self] index in
-                self.accent = DemoAccent(rawValue: index)!
-                SecureKeyboard.configure(accentColor: self.accent.color)
-                self.tableView.reloadSections(IndexSet(integer: Section.demos.rawValue), with: .none)
-            }
-
-        case .haptics:
-            content.text = "Haptic feedback"
-            cell.accessoryView = toggle(config.hapticFeedback) { SecureKeyboard.configure(hapticFeedback: $0) }
-
-        case .captureProtection:
-            content.text = "Hide from screen capture"
-            cell.accessoryView = toggle(config.protectsAgainstScreenCapture) {
-                SecureKeyboard.configure(protectsAgainstScreenCapture: $0)
-            }
-
-        case .clearOnScreenshot:
-            content.text = "Clear on screenshot"
-            cell.accessoryView = toggle(config.clearsOnScreenshot) { SecureKeyboard.configure(clearsOnScreenshot: $0) }
-
-        case .clearOnInactive:
-            content.text = "Clear when app inactive"
-            cell.accessoryView = toggle(config.clearsWhenAppResignsActive) {
-                SecureKeyboard.configure(clearsWhenAppResignsActive: $0)
-            }
-
-        case .reset:
-            content.text = "Reset to defaults"
-            content.textProperties.color = .systemRed
-            cell.selectionStyle = .default
-        }
-    }
-
-    private func segmented(_ titles: [String], selected: Int, onChange: @escaping (Int) -> Void) -> UISegmentedControl {
-        let control = UISegmentedControl(items: titles)
-        control.selectedSegmentIndex = selected
-        control.addAction(UIAction { action in
-            guard let control = action.sender as? UISegmentedControl else { return }
-            onChange(control.selectedSegmentIndex)
-        }, for: .valueChanged)
-        control.sizeToFit()
-        return control
-    }
-
-    private func toggle(_ isOn: Bool, onChange: @escaping (Bool) -> Void) -> UISwitch {
-        let control = UISwitch()
-        control.isOn = isOn
-        control.addAction(UIAction { action in
-            guard let control = action.sender as? UISwitch else { return }
-            onChange(control.isOn)
-        }, for: .valueChanged)
-        return control
     }
 }
 

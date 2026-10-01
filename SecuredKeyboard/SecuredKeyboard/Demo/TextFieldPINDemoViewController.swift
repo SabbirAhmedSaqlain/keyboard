@@ -1,4 +1,5 @@
 import UIKit
+import SecurePINKeyboard
 
 /// Change-PIN screen built from plain `UITextField`s, made secure by
 /// registering them with `SecurePINTextFieldCoordinator`.

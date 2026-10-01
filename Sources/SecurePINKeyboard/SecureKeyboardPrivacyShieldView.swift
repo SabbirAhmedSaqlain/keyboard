@@ -11,7 +11,9 @@ public final class SecureKeyboardPrivacyShieldView: UIView {
     private let messageLabel = UILabel()
     private let continueButton = UIButton(type: .system)
 
-    public init(configuration: SecureKeyboardConfiguration = SecureKeyboard.configuration) {
+    public init(configuration: SecureKeyboardConfiguration? = nil) {
+        // `nil` = the app-wide `SecureKeyboard.configuration`.
+        let configuration = configuration ?? SecureKeyboard.configuration
         super.init(frame: .zero)
         setup(configuration: configuration)
     }

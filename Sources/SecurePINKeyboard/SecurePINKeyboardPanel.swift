@@ -14,6 +14,7 @@ import UIKit
 ///     let field = SecurePINFieldView(title: "PIN")
 ///     panel = SecurePINKeyboardPanel(field: field, hostView: view)
 ///     panel.onComplete = { field in submit(field.copyPINBytes()) }
+@MainActor
 public final class SecurePINKeyboardPanel: NSObject {
 
     public let field: SecurePINFieldView
